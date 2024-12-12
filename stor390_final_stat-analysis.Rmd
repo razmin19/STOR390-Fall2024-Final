@@ -1,0 +1,397 @@
+---
+title: "STOR 390 Final - Statistical Analysis/Coding"
+date: "2024-12-12"
+output:
+  html_document:
+    toc: true
+    toc_depth: 4
+    toc_float: true
+    # code_folding: 'hide'
+    self_contained: true    
+    fig_caption: yes    
+    number_sections: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+# Load libraries
+library(tidyverse)
+library(datawizard)
+library(MASS)
+library(margins) # summary function here overrides the basic R function
+library(pROC)
+library(caret)
+
+# Load dataset
+data <- data_read("C:/Users/razmi/OneDrive - University of North Carolina at Chapel Hill/STOR390/FDI.dta")
+
+# Drop rows with missing data (complete case analysis)
+data <- data %>% drop_na() # 3947 obs dropped
+
+str(data)
+summary(data)
+```
+
+# Combined outcomes probit regression with calibration check
+```{r}
+probit_full <- glm(financial_distress_indicator ~ total_margin +
+                         total_margin_tminus1 + total_margin_tminus2 +
+                         outpatient_to_total_revenue + uncompensated_care +
+                         pct_cahmpas_benchmarks_met + cah_indicator +
+                         medicare_payer_mix + medicare_advantage_ratio +
+                         medicaid_to_medicare_fee_index + medicaid_payer_mix +
+                         forprofit_indicator + system_affiliation_indicator +
+                         log_distance_to_g100bed_hospital +
+                         financial_distress_type,
+                       
+                       data = data,
+                       family = binomial(link = "probit"))
+
+summary(probit_full)
+
+# AMEs
+AME_full <- summary(margins(probit_full))
+AME_full
+# statistically significant AMEs
+AME_full %>% filter(p < 0.001)
+
+# Predict probabilities for the test set
+data_full_test <- data %>% filter(training_set_indicator == 0)
+
+data_full_test <- data_full_test %>% 
+  mutate(pred_full = predict(probit_full, 
+                                 newdata = data_full_test, 
+                                 type = "response"))
+
+# AUC Calculation
+roc_full <- roc(data_full_test$financial_distress_indicator, 
+                    data_full_test$pred_full)
+auc_full <- auc(roc_full)
+cat("AUC for Full Model:", round(auc_full, 3), "\n") 
+# 0.867 > 0.754 (for model without financial_distress_type)
+
+# Plot ROC Curve
+plot(roc_full, main = "ROC Curve - Full Model", col = "purple")
+text(0.6, 0.4, paste("AUC =", round(auc_full, 3)), col = "purple")
+
+```
+# Multicollinearity check for full model
+```{r}
+library(car)
+
+vif_values <- vif(probit_full)
+vif_values
+
+# No predictors with too high VIF values
+
+```
+# Simulation with data similar to original dataset
+```{r}
+data <- data_read("C:/Users/razmi/OneDrive - University of North Carolina at Chapel Hill/STOR390/FDI.dta")
+data <- data %>% drop_na() # 3947 obs dropped
+
+# Extract continuous variables from the original data
+continuous_vars <- c("total_margin", "total_margin_tminus1", "total_margin_tminus2", 
+                     "outpatient_to_total_revenue", "uncompensated_care", 
+                     "pct_cahmpas_benchmarks_met", "medicare_payer_mix", 
+                     "medicare_advantage_ratio", "medicaid_to_medicare_fee_index", 
+                     "medicaid_payer_mix", "log_distance_to_g100bed_hospital")
+data_cont <- data[continuous_vars]
+
+means <- colMeans(data_cont, na.rm = TRUE)  # Calculate means for continuous variables
+cov_matrix <- cov(data_cont, use = "complete.obs")  # Calculate covariance matrix
+
+n <- 42226  # Number of observations (same as in the actual dataset)
+
+# Simulate continuous predictors using multivariate normal distribution
+X_cont <- mvrnorm(n, mu = means, Sigma = cov_matrix)
+colnames(X_cont) <- continuous_vars
+
+# Simulate binary variables (assuming proportions from real data):
+cah_indicator <- rbinom(n, size = 1, prob = mean(data$cah_indicator, na.rm = TRUE))
+forprofit_indicator <- rbinom(n, size = 1, prob = mean(data$forprofit_indicator, na.rm = TRUE))
+system_affiliation_indicator <- rbinom(n, size = 1, prob = mean(data$system_affiliation_indicator, na.rm = TRUE))
+
+# For financial distress type (categorical variable, simulate based on observed proportions):
+financial_distress_type <- sample(c("Negative cash flow margin", "Negative equity", "Hospital closure"), 
+                                   n, replace = TRUE, 
+                                   prob = prop.table(table(data$financial_distress_type)))
+
+# Combine the simulated variables into a data frame
+data_sim <- data.frame(X_cont,
+                       cah_indicator, 
+                       forprofit_indicator, 
+                       system_affiliation_indicator, 
+                       financial_distress_type)
+
+# Coefficients from the real probit model
+coefficients <- c(Intercept = -1.577466, 
+                  total_margin = -0.179609, 
+                  total_margin_tminus1 = -0.045296, 
+                  total_margin_tminus2 = -0.121104, 
+                  outpatient_to_total_revenue = -0.096233, 
+                  uncompensated_care = 0.094297, 
+                  pct_cahmpas_benchmarks_met = -0.326124, 
+                  cah_indicator = 0.120538, 
+                  medicare_payer_mix = -0.061746, 
+                  medicare_advantage_ratio = -0.001059, 
+                  medicaid_to_medicare_fee_index = -0.007311, 
+                  medicaid_payer_mix = 0.011893, 
+                  forprofit_indicator = 0.304215, 
+                  system_affiliation_indicator = 0.047793,
+                  log_distance_to_g100bed_hospital = -0.002979,
+                  `financial_distress_typeNegative cash flow margin` = 2.000227, 
+                  `financial_distress_typeNegative equity` = 1.397609)
+
+# Prepare the model matrix (including categorical variables)
+X_matrix <- model.matrix(~ total_margin + total_margin_tminus1 + total_margin_tminus2 
+                         + outpatient_to_total_revenue + uncompensated_care
+                         + pct_cahmpas_benchmarks_met + cah_indicator 
+                         + medicare_payer_mix + medicare_advantage_ratio 
+                         + medicaid_to_medicare_fee_index 
+                         + medicaid_payer_mix + forprofit_indicator 
+                         + system_affiliation_indicator 
+                         + log_distance_to_g100bed_hospital 
+                         + financial_distress_type, data = data_sim)
+
+# Simulate the latent variable (linear predictor)
+latent_variable <- X_matrix %*% coefficients + rnorm(n)
+
+# Simulate financial distress indicator based on the latent variable (probit link function)
+data_sim$financial_distress_indicator <- as.numeric(pnorm(latent_variable) > 0.5)
+
+str(data_sim)
+
+# Fit the original model on the simulated data
+probit_model_sim <- glm(financial_distress_indicator ~ total_margin + 
+                          total_margin_tminus1 + 
+                          total_margin_tminus2 + outpatient_to_total_revenue + 
+                          uncompensated_care + pct_cahmpas_benchmarks_met + 
+                          cah_indicator + medicare_payer_mix + 
+                          medicare_advantage_ratio + 
+                          medicaid_to_medicare_fee_index + 
+                          medicaid_payer_mix + forprofit_indicator + 
+                          system_affiliation_indicator + 
+                          log_distance_to_g100bed_hospital + 
+                          financial_distress_type,
+                        data = data_sim, family = binomial(link = "probit"))
+
+
+summary(probit_model_sim)
+predicted_probabilities <- predict(probit_model_sim, type = "response")
+
+# Convert probabilities to binary 
+predicted_class <- ifelse(predicted_probabilities > 0.5, 1, 0)
+
+# Confusion matrix to evaluate model performance
+conf_matrix <- confusionMatrix(factor(predicted_class), factor(data_sim$financial_distress_indicator))
+
+conf_matrix
+
+accuracy <- sum(predicted_class == data_sim$financial_distress_indicator) / length(predicted_class)
+cat("Accuracy of the model on the simulated data: ", accuracy, "\n")
+
+# AUC & ROC curves
+roc_sim <- roc(data_sim$financial_distress_indicator, predicted_probabilities)
+auc_sim <- auc(roc_sim)
+cat("AUC (Area Under the Curve) of the model on the simulated data: ", auc_sim, "\n")
+
+plot(roc_full, col = "purple", lwd = 2, main = "Comparison of ROC Curves")
+lines(roc_sim, col = "blue", lwd = 2)
+legend("bottomright", legend = c("Original Model", "Simulation"), 
+       col = c("purple", "blue"), lwd = 2)
+```
+# Simulation with data with higher proportions of negative profit margin
+```{r}
+set.seed(42)
+
+# Simulate an increase in the percentage of hospitals with negative total margin
+data_sim_mod <- data_sim
+neg_margin_count <- sum(data_sim_mod$total_margin < 0)
+new_neg_margin_count <- round(nrow(data_sim_mod) * 0.60) 
+# ^^Increase the proportion of negative margins to 60%
+
+indices_to_modify <- sample(which(data_sim_mod$total_margin >= 0), 
+                            size = new_neg_margin_count - neg_margin_count, 
+                            replace = FALSE)
+data_sim_mod$total_margin[indices_to_modify] <- runif(length(indices_to_modify), 
+                                                      min = -5, max = -0.1)
+
+summary(data_sim_mod$total_margin)
+
+# Fitting probit model
+probit_sim_mod <- glm(financial_distress_indicator ~ total_margin + 
+                          total_margin_tminus1 + 
+                          total_margin_tminus2 + outpatient_to_total_revenue + 
+                          uncompensated_care + pct_cahmpas_benchmarks_met + 
+                          cah_indicator + medicare_payer_mix + 
+                          medicare_advantage_ratio + 
+                          medicaid_to_medicare_fee_index + 
+                          medicaid_payer_mix + forprofit_indicator + 
+                          system_affiliation_indicator + 
+                          log_distance_to_g100bed_hospital + 
+                          financial_distress_type,
+                      data = data_sim_mod, family = binomial(link = "probit"))
+
+predicted_probabilities_mod <- predict(probit_sim_mod, type = "response")
+
+# Convert probabilities to binary 
+predicted_class_mod <- ifelse(predicted_probabilities_mod > 0.5, 1, 0)
+
+# Confusion matrix to evaluate model performance
+conf_matrix <- confusionMatrix(factor(predicted_class_mod), factor(data_sim_mod$financial_distress_indicator))
+
+conf_matrix
+
+accuracy <- sum(predicted_class == data_sim$financial_distress_indicator) / length(predicted_class)
+cat("Accuracy of the model on the simulated data: ", accuracy, "\n")
+
+
+# ROC curves
+roc_curve_mod <- roc(data_sim_mod$financial_distress_indicator, predicted_probabilities_mod)
+auc_sim <- auc(roc_sim)
+cat("AUC (Area Under the Curve) of the model on the simulated data: ", auc_sim, "\n")
+
+plot(roc_full, col = "purple", lwd = 2, main = "Comparison of ROC Curves")
+lines(roc_curve_mod, col = "red", lwd = 2)
+legend("bottomright", legend = c("Original Model", "Modified Model"), 
+       col = c("purple", "red"), lwd = 2)
+
+```
+
+
+____________________________________
+
+# Probit regression for each financial distress outcome
+
+## Negative Cash Flow Margin
+```{r}
+data_neg_cash_flow <- data %>% 
+  filter(financial_distress_type == "Negative cash flow margin")
+
+data_neg_cash_flow_train <- data_neg_cash_flow %>% filter(training_set_indicator == 1)
+data_neg_cash_flow_test <- data_neg_cash_flow %>% filter(training_set_indicator == 0)
+
+# Fit probit model on training set
+probit_neg_cash_flow <- glm(financial_distress_indicator ~ total_margin +
+                              total_margin_tminus1 + total_margin_tminus2 + 
+                              outpatient_to_total_revenue + uncompensated_care +
+                              pct_cahmpas_benchmarks_met + cah_indicator +
+                              medicare_payer_mix + medicare_advantage_ratio + 
+                              medicaid_to_medicare_fee_index + medicaid_payer_mix +
+                              forprofit_indicator + system_affiliation_indicator + 
+                              log_distance_to_g100bed_hospital,
+                            
+                            data = data_neg_cash_flow_train, 
+                            family = binomial(link = "probit"))
+
+# Calculate Average Marginal Effects (AMEs)
+AME_neg_cash_flow <- summary(margins(probit_neg_cash_flow))
+AME_neg_cash_flow
+
+# Predict financial_distress_indicator for testing set
+predict_test_neg_cash_flow <- data_neg_cash_flow_test %>% 
+  mutate(pred_neg_cash_flow = predict(probit_neg_cash_flow, 
+                                      newdata = data_neg_cash_flow_test, 
+                                      type = "response"))
+```
+
+## Negative Equity
+```{r}
+data_neg_equity <- data %>% filter(financial_distress_type == "Negative equity")
+
+data_neg_equity_train <- data_neg_equity %>% filter(training_set_indicator == 1)
+data_neg_equity_test <- data_neg_equity %>% filter(training_set_indicator == 0)
+
+# Fit probit model
+probit_neg_equity <- glm(financial_distress_indicator ~ total_margin +
+                              total_margin_tminus1 + total_margin_tminus2 + 
+                              outpatient_to_total_revenue + uncompensated_care +
+                              pct_cahmpas_benchmarks_met + cah_indicator +
+                              medicare_payer_mix + medicare_advantage_ratio + 
+                              medicaid_to_medicare_fee_index + medicaid_payer_mix +
+                              forprofit_indicator + system_affiliation_indicator + 
+                              log_distance_to_g100bed_hospital,
+                         
+                         data = data_neg_equity_train, 
+                         family = binomial(link = "probit"))
+
+AME_neg_equity <- summary(margins(probit_neg_equity))
+AME_neg_equity
+
+# Predict financial_distress_indicator for testing set
+predict_test_neg_equity <- data_neg_equity_test %>% 
+  mutate(pred_neg_equity = predict(probit_neg_equity, 
+                                   newdata = data_neg_equity_test, 
+                                   type = "response"))
+```
+
+## Hospital Closure
+```{r}
+data_hospital_closure <- data %>% filter(financial_distress_type == "Closure")
+
+data_hospital_closure_train <- data_hospital_closure %>% 
+  filter(training_set_indicator == 1)
+data_hospital_closure_test <- data_hospital_closure %>% 
+  filter(training_set_indicator == 0)
+
+# Fit probit model
+probit_hospital_closure <- glm(financial_distress_indicator ~ total_margin +
+                              total_margin_tminus1 + total_margin_tminus2 + 
+                              outpatient_to_total_revenue + uncompensated_care +
+                              pct_cahmpas_benchmarks_met + cah_indicator +
+                              medicare_payer_mix + medicare_advantage_ratio + 
+                              medicaid_to_medicare_fee_index + medicaid_payer_mix +
+                              forprofit_indicator + system_affiliation_indicator + 
+                              log_distance_to_g100bed_hospital,     
+                              
+                              data = data_hospital_closure_train, 
+                              family = binomial(link = "probit"))
+
+AME_hospital_closure <- summary(margins(probit_hospital_closure))
+AME_hospital_closure
+
+# Predict financial_distress_indicator for testing set
+predict_test_hospital_closure <- data_hospital_closure_test %>% 
+  mutate(pred_hospital_closure = predict(probit_hospital_closure, 
+                                         newdata = data_hospital_closure_test, 
+                                         type = "response"))
+
+```
+
+# Model calibration check
+```{r}
+# AUC Calculation for Negative Cash Flow Margin
+roc_neg_cash_flow <- roc(data_neg_cash_flow_test$financial_distress_indicator, 
+                          predict_test_neg_cash_flow$pred_neg_cash_flow)
+auc_neg_cash_flow <- auc(roc_neg_cash_flow)
+
+# Plot ROC curve for Negative Cash Flow Margin
+plot(roc_neg_cash_flow, main = "ROC Curve - Negative Cash Flow Margin", col = "blue")
+text(0.6, 0.4, paste("AUC =", round(auc_neg_cash_flow, 3)), col = "blue")
+
+# Negative Equity
+roc_neg_equity <- roc(data_neg_equity_test$financial_distress_indicator, 
+                      predict_test_neg_equity$pred_neg_equity)
+auc_neg_equity <- auc(roc_neg_equity)
+
+plot(roc_neg_equity, main = "ROC Curve - Negative Equity", col = "green")
+text(0.6, 0.4, paste("AUC =", round(auc_neg_equity, 3)), col = "green")
+
+# Hospital Closure
+roc_hospital_closure <- roc(data_hospital_closure_test$financial_distress_indicator, 
+                            predict_test_hospital_closure$pred_hospital_closure)
+auc_hospital_closure <- auc(roc_hospital_closure)
+
+plot(roc_hospital_closure, main = "ROC Curve - Hospital Closure", col = "red")
+text(0.6, 0.4, paste("AUC =", round(auc_hospital_closure, 3)), col = "red")
+
+# Print AUC values for all models
+cat("AUC for Negative Cash Flow Margin:", round(auc_neg_cash_flow, 3), "\n")
+cat("AUC for Negative Equity:", round(auc_neg_equity, 3), "\n")
+cat("AUC for Hospital Closure:", round(auc_hospital_closure, 3), "\n")
+
+```
