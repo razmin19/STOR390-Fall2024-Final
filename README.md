@@ -4,3 +4,6 @@ This is a repository storing the Final project files of STOR 390, taken in Fall 
 ## Software
 All projects used R for computation. Pdfs and html files were rendered via R (Markdown).
 
+## External link
+This project analyzes the statistical analysis conducted in the following paper: https://onlinelibrary.wiley.com/doi/full/10.1111/jrh.12882
+
