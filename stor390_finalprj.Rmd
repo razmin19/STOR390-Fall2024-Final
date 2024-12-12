@@ -124,9 +124,10 @@ kable(
     font_size = 8,
     latex_options = c("striped", "scale_down")
   ) %>%
-  column_spec(1, width = "10em") %>% 
-  column_spec(2, width = "15em") %>%
-  column_spec(3:5, width = "8em") 
+  column_spec(1, width = "3em") %>% 
+  column_spec(2, width = "10em") %>%
+  column_spec(3, width = "15em") %>%
+  column_spec(4:6, width = "6em")
 ```
 
  To clarify with an example, an increase of one standard deviation in uncompensated care as a percentage of operating expenses increases the probability of future financial distress by 1.3%
