@@ -40,7 +40,7 @@ Financial distress indicator = $\beta_0 + \sum_{i=1}^p \beta_i * X_i + \epsilon$
 
 where $\beta_0$ is the intercept, $\beta_i$ are the coefficients for the predictors $X_i$, and $\epsilon$ is the error term.
 
-Maintaining the paper's decision to not report the uninterpretable probit coefficients, here are the Average Marginal Effects (AMEs) given a one standard deviation change in the covariates, along with corresponding p-values:
+Maintaining the paper's decision to not report the uninterpretable probit coefficients, here are the statistically significant Average Marginal Effects (AMEs) given a one standard deviation change in the covariates, along with corresponding p-values:
 
 ```{r, include = FALSE}
 # Load libraries
@@ -60,76 +60,53 @@ data <- data %>% drop_na() # 3947 obs dropped
 str(data)
 summary(data)
 
-# Renaming variables
-data <- data %>%
-  rename(
-    `Percent total margin, year t` = total_margin,
-    `Percent total margin, year t - 1` = total_margin_tminus1,
-    `Percent total margin, year t - 2` = total_margin_tminus2,
-    `Percent outpatient to total revenue` = outpatient_to_total_revenue,
-    `Uncompensated care as a percentage of operating expenses` = uncompensated_care,
-    `Percent CAHMPAS benchmarks met (2 years)` = pct_cahmpas_benchmarks_met,
-    `CAH indicator variable` = cah_indicator,
-    `Percent Medicare outpatient payer mix` = medicare_payer_mix,
-    `Percent Medicare Advantage and cost plan days` = medicare_advantage_ratio,
-    `Fee index expressed as a percent` = medicaid_to_medicare_fee_index,
-    `Percent Medicaid payer mix` = medicaid_payer_mix,
-    `For-profit indicator variable` = forprofit_indicator,
-    `System affiliation indicator variable` = system_affiliation_indicator,
-    `Miles to nearest hospital with more than 100 beds (log)` = log_distance_to_g100bed_hospital
-    )
-
-probit_full <- glm(financial_distress_indicator ~ 
-                         `Percent total margin, year t` +
-                         `Percent total margin, year t - 1` +
-                         `Percent total margin, year t - 2` +
-                         `Percent outpatient to total revenue` +
-                         `Uncompensated care as a percentage of operating expenses` +
-                         `Percent CAHMPAS benchmarks met (2 years)` +
-                         `CAH indicator variable` +
-                         `Percent Medicare outpatient payer mix` +
-                         `Percent Medicare Advantage and cost plan days` +
-                         `Fee index expressed as a percent` +
-                         `Percent Medicaid payer mix` +
-                         `For-profit indicator variable` +
-                         `System affiliation indicator variable` +
-                         `Miles to nearest hospital with more than 100 beds (log)` +
+probit_full <- glm(financial_distress_indicator ~ total_margin +
+                         total_margin_tminus1 + total_margin_tminus2 +
+                         outpatient_to_total_revenue + uncompensated_care +
+                         pct_cahmpas_benchmarks_met + cah_indicator +
+                         medicare_payer_mix + medicare_advantage_ratio +
+                         medicaid_to_medicare_fee_index + medicaid_payer_mix +
+                         forprofit_indicator + system_affiliation_indicator +
+                         log_distance_to_g100bed_hospital +
                          financial_distress_type,
                        
                        data = data,
                        family = binomial(link = "probit"))
 
+summary(probit_full)
+
 # AMEs
 AME_full <- summary(margins(probit_full))
 
-AME_full_table <- AME_full %>%
-  dplyr::mutate(Description = c("Profitability", "Profitability", "Profitability", 
-                                "Outpatient revenue to total revenue", 
-                                "Uncompensated care", "Benchmark performance", 
-                                "CAH status", "Hospital Medicare outpatient payer mix", 
-                                "Medicare Advantage plus cost plan days to traditional Medicare days", 
-                                "Medicaid-to-Medicare fee index for 'All Services'", 
-                                "Medicaid payer mix", "For-profit indicator variable", 
-                                "System affiliation", "Miles to nearest hospital with more than 100 beds (log)", 
-                                 
-                                "/Negative Equity/", "/Negative Cash Flow Margin/"),
-         Variable = c("Percent total margin, year t", "Percent total margin, year t - 1", 
-                      "Percent total margin, year t - 2", 
-                      "Percent outpatient to total revenue", 
-                      "Uncompensated care as a percentage of operating expenses", 
-                      "Percent CAHMPAS benchmarks met (2 years)", 
-                      "CAH indicator variable", "Percent Medicare outpatient payer mix", 
-                      "Percent Medicare Advantage and cost plan days", 
-                      "Fee index expressed as a percent", "Percent Medicaid payer mix", 
-                      "For-profit indicator variable", 
-                      "System affiliation indicator variable", 
-                      "Miles to nearest hospital with more than 100 beds (log)",
-                      "financial_distress_typeNegative equity",
-                      "financial_distress_typeNegative cash flow margin"
+AME_ss <- subset(AME_full, p < 0.05)
+
+AME_ss_table <- AME_ss %>%
+  dplyr::mutate(Description = c("CAH indicator variable", 
+                                "/Negative Cash Flow Margin/",
+                                "/Negative Equity/",
+                                "For-profit indicator",
+                                "Percent Medicare outpatient payer mix",
+                                "Percent outpatient to total revenue",
+                                "Percent CAHMPAS benchmarks met (2 years)",
+                                "System affiliation",
+                                "Percent total margin, year t", 
+                                "Percent total margin, year t - 1", 
+                                "Percent total margin, year t - 2", 
+                                "Uncompensated care as a percentage of operating expenses"
+                                ),
+         Variable = c('cah_indicator', 'financial_distress_typeNegative cash flow margin', 
+                      'financial_distress_typeNegative equity', 
+                      'forprofit_indicator',
+                      'medicare_payer_mix', 'outpatient_to_total_revenue',
+                      'pct_cahmpas_benchmarks_met', 
+                      'system_affiliation_indicator',
+                      'total_margin', 'total_margin_tminus1', 
+                      'total_margin_tminus2',
+                       'uncompensated_care'
                       ),
-         `Average marginal effect` = AME_full$AME,
-         `Standard error` = AME_full$SE,
-         `p-value` = AME_full$p) %>%
+         `Average marginal effect` = AME_ss$AME,
+         `Standard error` = AME_ss$SE,
+         `p-value` = AME_ss$p) %>%
   dplyr::select(Description, Variable, `Average marginal effect`, `Standard error`, `p-value`)
 # Generate the LaTeX table
 library(knitr)
@@ -138,7 +115,7 @@ library(kableExtra)
 
 ```{r, echo = FALSE, warning=FALSE}
 kable(
-  AME_full_table,
+  AME_ss_table,
   booktabs = TRUE,
   caption = "Average Marginal Effects for Financial Distress Model",
   digits = 5
@@ -151,6 +128,8 @@ kable(
   column_spec(2, width = "15em") %>%
   column_spec(3:5, width = "8em") 
 ```
+
+ To clarify with an example, an increase of one standard deviation in uncompensated care as a percentage of operating expenses increases the probability of future financial distress by 1.3%
 
 The stacked nature of the dataset has allowed the model to be optimally parsimonious. It also increased the risk of multicollinearity. Hence, the Variance Inflation Factor (VIF) was calculated, and no predictors had high VIF values, suggesting that multicollinearity among covariates is not a significant concern for the model.
 
@@ -351,7 +330,7 @@ predicted_class_mod <- ifelse(predicted_probabilities_mod > 0.5, 1, 0)
 # Confusion matrix to evaluate model performance
 conf_matrix <- confusionMatrix(factor(predicted_class_mod), factor(data_sim_mod$financial_distress_indicator))
 
-conf_matrix
+
 
 accuracy <- sum(predicted_class == data_sim$financial_distress_indicator) / length(predicted_class)
 cat("Accuracy of the model on the simulated data: ", accuracy, "\n")
@@ -377,7 +356,7 @@ text(0.6, 0.4, paste("AUC =", round(auc_sim_mod, 3)), col = "red")
 
 Ideally, this predictive model would serve as a decision-making tool to identify hospitals at risk of financial distress, potentially increasing funding or driving policy changes to support these institutions. However, a critical limitation of this approach is its failure to account for the possibility of (reverse) causation among the covariates and the financial distress outcomes. For instance, a hospital's negative cash flow margin—representing low profitability—could itself be the cause of certain covariate values, such as high uncompensated care or low outpatient revenue. In such cases, the model might simply be reflecting symptoms of financial distress rather than identifying the root causes. If profitability becomes the primary determinant for funding or intervention based on the model’s predictions, a hospital’s ability to demonstrate financial health may unjustly dictate whether it receives the support necessary to remain operational.  
 
-This concern is particularly salient given that one of the statistically significant predictors in the Malone et al. study was percent total margin, often used as a proxy for profitability. Indeed, three measures of percent total margin are included, including values from up to two years ago for a given observation. In my own analysis above, a decrease of one standard deviation in percent total margin two years prior showed a statistically significant change in the probability of future financial distress by about 2%. It is worthwhile to note that the model's predictive accuracy does not degrade when the proportion of hospitals with negative profit margins was increased in the simulation study. This shows that the model is not as heavily swayed by variables of profitability as one might think. On the other hand, the decrease in AUC does suggest some loss of predictive power which requires further analysis to be sure that inequities are not exacerbated.
+This concern is particularly salient given that one of the statistically significant predictors in the Malone et al. study was percent total margin, often used as a proxy for profitability. Indeed, three measures of percent total margin are included, including values from up to two years ago for a given observation. In my own analysis above, an increase of one standard deviation in percent total margin showed a statistically significant decrease in the probability of future financial distress by about 2.5%. It is worthwhile to note that the model's predictive accuracy does not degrade when the proportion of hospitals with negative profit margins was increased in the simulation study. This shows that the model is not as heavily swayed by variables of profitability as one might think. On the other hand, the decrease in AUC does suggest some loss of predictive power which requires further analysis to be sure that inequities are not exacerbated.
 
 Regardless, employing such a model raises profound ethical concerns. From a consequentialist perspective, the ethical evaluation of an action is based on its outcomes. Consequentialists argue that an action is morally right if it leads to the greatest good for the greatest number of people. Employing a model that prioritizes the monetary interests of hospital owners over the well-being of the community fails this test. By allowing financial metrics to dictate intervention decisions, such an approach could lead to the closure of hospitals that are vital to underserved communities, resulting in widespread suffering and reduced access to healthcare. The negative consequences for large rural populations far outweigh any benefits accrued by a small group of stakeholders.
 
