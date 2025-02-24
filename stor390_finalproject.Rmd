@@ -419,3 +419,32 @@ By prioritizing profitability as a criterion for allocating resources, usage of 
 # References
 1. Malone, Tyler L, et al. “An Updated Model of Rural Hospital Financial Distress.” The Journal of Rural Health, 3 Oct. 2024, https://doi.org/10.1111/jrh.12882.
 
+```{r, echo = FALSE}
+# Instructor comments:
+# nice job carefully detailing your data set and any differences it has with the original.  
+
+# last sentence of page 2 subject-verb agreement.  Rows... is (are) removed
+
+# I could use a fuller description of the probit model.  what assumptions are placed on the epsilon?  discuss why a probit model is the correct one to use. 
+
+# in interpretation at bottom of page 3, you need "holding all else equal" since this is a multiple regression.  
+
+# elaborate on what you mean by the simulated data was fit to the same probit model.  you mean you re-estimated the parameters for the same set of covariates in a probit model correct?  not that you simply coerced the parameters to be the same and saw how the AUC/ROC would look under the simulated data on the same parameters?
+
+# really nice discussion of limitations.  
+
+# I would figure out a way to make the equalized odds figure as visually appealing as the others presented in this paper.  make it a new table rather than reporting the raw output
+
+
+# I really enjoy your addressing the same moral concern from each of the three frameworks.  this illustrates that while they can (at times) disagree, they are often completely consistent.  in the instances where they are consistent, we get the most compelling argument.  
+
+ 
+
+unless otherwise stated, full points awarded according to rubric:
+
+analysis of method 9/10 
+
+grammar: 2/3 
+
+figures/formulas: 4/5 
+```
